@@ -3,59 +3,52 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <fcntl.h>
 
 #define BUFFER_SIZE 1024
 
 int main() {
-    int pipe1[2];  // pipe1: child stdout -> parent stdin
+    int pipe1[2];  
     pid_t pid;
     char filename[256];
     char buffer[BUFFER_SIZE];
     int bytes_read;
     
-    // Создаем pipe1
+    // создать pipe1
     if (pipe(pipe1) == -1) {
         perror("pipe1 failed");
         exit(EXIT_FAILURE);
     }
     
-    // Получаем имя файла от пользователя
     printf("Введите имя файла: ");
-    if (fgets(filename, sizeof(filename), stdin) == NULL) {
-        perror("fgets failed");
-        exit(EXIT_FAILURE);
+    if (scanf("s", filename) != 1) {
+        perror("scanf failed");
+        exit(-1);
     }
     
-    // Убираем символ новой строки
-    filename[strcspn(filename, "\n")] = 0;
-    
-    // Создаем дочерний процесс
+    // копия процесса
     pid = fork();
     if (pid == -1) {
         perror("fork failed");
-        exit(EXIT_FAILURE);
+        exit(-1);
     }
     
     if (pid == 0) {
-        // Дочерний процесс
-        close(pipe1[0]);  // Закрываем чтение из pipe1
+        close(pipe1[0]);  
         
-        // Перенаправляем stdout в pipe1[1]
-        dup2(pipe1[1], STDOUT_FILENO);
-        close(pipe1[1]);
+        // stdout -> pipe1[1]
+        dup2(pipe1[1], 1); // или dup2(pipe1[1], STDOUT_FILENO);
+        /*STDOUT_FILENO - это стандартный файловый дескриптор для стандартного 
+        потока вывода.*/
+        close(pipe1[1]); 
         
-        // Запускаем программу дочернего процесса
         execl("./child", "child", filename, NULL);
         
-        // Если execl вернулся, значит ошибка
+        // execl = ошибка
         perror("execl failed");
-        exit(EXIT_FAILURE);
+        exit(-1);
     } else {
-        // Родительский процесс
-        close(pipe1[1]);  // Закрываем запись в pipe1
+        close(pipe1[1]); 
         
-        // Читаем данные из pipe1 и выводим на stdout
         while ((bytes_read = read(pipe1[0], buffer, BUFFER_SIZE - 1)) > 0) {
             buffer[bytes_read] = '\0';
             printf("%s", buffer);
@@ -64,7 +57,7 @@ int main() {
         
         close(pipe1[0]);
         
-        // Ждем завершения дочернего процесса
+        // ожидание завершения
         wait(NULL);
         printf("Дочерний процесс завершен.\n");
     }
