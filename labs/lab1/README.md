@@ -30,17 +30,20 @@ echo "30" >> tests/test3.txt
 
 ### 4. Примеры выполнения
 ```bash
-~/OS/labs/lab1$ echo "tests/test1.txt" | ./parent
+~/OS/labs/lab1$ ./parent
+Введите имя файла: tests/test1.txt
 6
 15
 24
 Дочерний процесс завершен.
-~/OS/labs/lab1$ echo "tests/test2.txt" | ./parent
+~/OS/labs/lab1$ ./parent
+Введите имя файла: tests/test2.txt
 3
 0
-7  
+7
 Дочерний процесс завершен.
-~/OS/labs/lab1$ echo "tests/test3.txt" | ./parent
+~/OS/labs/lab1$ ./parent
+Введите имя файла: tests/test3.txt        
 10
 20
 30
