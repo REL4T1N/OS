@@ -1,0 +1,12 @@
+.vscode/
+demo.с
+test*
+demo*
+parent
+.devcontainer/
+*vscode*
+child
+child.exe
+gcc
+strace.txt
+*.exe

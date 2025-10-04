@@ -3,15 +3,18 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <fcntl.h> 
 
 #define BUFFER_SIZE 1024
+#define FILENAME_SIZE 256 
 
 int main() {
     int pipe1[2];  
     pid_t pid;
-    char filename[256];
+    char filename[FILENAME_SIZE];
     char buffer[BUFFER_SIZE];
     int bytes_read;
+    int file_fd;
     
     // создать pipe1
     if (pipe(pipe1) == -1) {
@@ -20,39 +23,57 @@ int main() {
     }
     
     printf("Введите имя файла: ");
-    if (scanf("s", filename) != 1) {
+    if (scanf("%255s", filename) != 1) {
         perror("scanf failed");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     
+    file_fd = open(filename, O_RDONLY);
+    if (file_fd == -1) {
+        perror("open failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("Файл '%s' открыт для чтения\n", filename);
+
     // копия процесса
     pid = fork();
     if (pid == -1) {
         perror("fork failed");
-        exit(-1);
+        close(file_fd);
+        exit(EXIT_FAILURE);
     }
     
     if (pid == 0) {
         close(pipe1[0]);  
+
+        // stdin -> file_fd
+        if (dup2(file_fd, STDIN_FILENO) == -1) {
+            perror("dup2 stdin failed");
+            close(file_fd);
+            exit(EXIT_FAILURE);
+        }
+        close(file_fd);
         
         // stdout -> pipe1[1]
-        dup2(pipe1[1], 1); // или dup2(pipe1[1], STDOUT_FILENO);
-        /*STDOUT_FILENO - это стандартный файловый дескриптор для стандартного 
-        потока вывода.*/
+        if (dup2(pipe1[1], STDOUT_FILENO) == -1) {
+            perror("dup2 failed");
+            close(pipe1[1]);
+            exit(EXIT_FAILURE);
+        }
         close(pipe1[1]); 
         
-        execl("./child", "child", filename, NULL);
+        execl("./child", "child", NULL);
         
         // execl = ошибка
         perror("execl failed");
         exit(-1);
     } else {
         close(pipe1[1]); 
+        close(file_fd);
         
-        while ((bytes_read = read(pipe1[0], buffer, BUFFER_SIZE - 1)) > 0) {
+        while ((bytes_read = read(pipe1[0], buffer, sizeof(buffer) - 1)) > 0) {
             buffer[bytes_read] = '\0';
             printf("%s", buffer);
-            fflush(stdout);
         }
         
         close(pipe1[0]);
