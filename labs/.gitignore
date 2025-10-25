@@ -10,3 +10,8 @@ child.exe
 gcc
 strace.txt
 *.exe
+venv
+old_version
+results
+parallel_sort
+commit*
