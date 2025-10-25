@@ -4,16 +4,16 @@
 #include <ctype.h>
 #include <unistd.h> 
 
-#define MAX_LINE_LENGTH 1024
 #define OUTPUT_BUFFER_SIZE 32
-#define FILENAME_SIZE 256    
 
 int main(int argc, char *argv[]) {
-    char line[MAX_LINE_LENGTH];
+    char *line = NULL;
+    size_t line_size = 0;
+    ssize_t len;
     char output_buffer[OUTPUT_BUFFER_SIZE];
 
     
-    while (fgets(line, sizeof(line), stdin) != NULL) {
+    while ((len = getline(&line, &line_size, stdin)) != -1) {
         int sum = 0;
         int number;
         char *token;
@@ -28,11 +28,11 @@ int main(int argc, char *argv[]) {
         }
         
 
-        int len = snprintf(output_buffer, sizeof(output_buffer), "%d\n", sum);
-        if (len > 0) {
-            write(STDOUT_FILENO, output_buffer, len);
+        int output_len = snprintf(output_buffer, sizeof(output_buffer), "%d\n", sum);
+        if (output_len > 0) {
+            write(STDOUT_FILENO, output_buffer, output_len);
         }
     }
-    
+    free(line);
     return 0;
 }

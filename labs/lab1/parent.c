@@ -5,15 +5,12 @@
 #include <sys/wait.h>
 #include <fcntl.h> 
 
-#define BUFFER_SIZE 1024
 #define FILENAME_SIZE 256 
 
 int main() {
     int pipe1[2];  
     pid_t pid;
     char filename[FILENAME_SIZE];
-    char buffer[BUFFER_SIZE];
-    int bytes_read;
     int file_fd;
     
     // создать pipe1
@@ -70,15 +67,26 @@ int main() {
     } else {
         close(pipe1[1]); 
         close(file_fd);
+
+        char *buffer = NULL;
+        size_t buffer_size = 0;
+        ssize_t len;
         
-        while ((bytes_read = read(pipe1[0], buffer, sizeof(buffer) - 1)) > 0) {
-            buffer[bytes_read] = '\0';
-            printf("%s", buffer);
+        FILE *pipe_read = fdopen(pipe1[0], "r");
+        if (pipe_read == NULL) {
+            perror("fdopen failed");
+            close(pipe1[0]);
+            exit(EXIT_FAILURE);
         }
         
-        close(pipe1[0]);
+        // Читаем построчно из pipe
+        while ((len = getline(&buffer, &buffer_size, pipe_read)) != -1) {
+            write(STDOUT_FILENO, buffer, len);
+        }
         
-        // ожидание завершения
+        free(buffer);
+        fclose(pipe_read);
+
         wait(NULL);
         printf("Дочерний процесс завершен.\n");
     }
