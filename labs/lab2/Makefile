@@ -20,7 +20,7 @@ BENCHMARK_LOGFILE = $(BENCHMARK_LOGS_DIR)/benchmark.txt
 VENV = venv
 PYTHON = $(VENV)/bin/python3
 
-.PHONY: all clean run test benchmark graphics test-size test-depth test-threshold test-single help venv directories
+.PHONY: all clean run test benchmark graphics test-size test-threads test-threshold test-single help venv directories
 
 # Создание директорий
 directories:
@@ -55,14 +55,16 @@ benchmark: directories $(TARGET)
 test-size: $(TARGET)
 	./$(TARGET) -size
 
-test-depth: $(TARGET)
-	./$(TARGET) -depth
+# ИЗМЕНИЛ: test-depth -> test-threads
+test-threads: $(TARGET)
+	./$(TARGET) -threads
 
 test-threshold: $(TARGET)
 	./$(TARGET) -threshold
 
+# ИЗМЕНИЛ: убрал -d параметр
 test-single: $(TARGET)
-	./$(TARGET) -s 10000000 -d 3 -p 1000
+	./$(TARGET) -s 10000000 -t 8 -p 1000
 
 run: $(TARGET)
 	./$(TARGET)
@@ -118,7 +120,7 @@ help:
 	@echo "  full-test         - полный тест (тесты + графики)"
 	@echo "  full-benchmark    - полный бенчмарк (бенчмарки + графики)"
 	@echo "  test-size         - тест размеров (1 раз, только консоль)"
-	@echo "  test-depth        - тест глубины (1 раз, только консоль)"
+	@echo "  test-threads      - тест количества потоков (1 раз, только консоль)"  # ИЗМЕНИЛ
 	@echo "  test-threshold    - тест порогов (1 раз, только консоль)"
 	@echo "  test-single       - одиночный тест (1 раз, только консоль)"
 	@echo "  venv              - создание виртуального окружения"

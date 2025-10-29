@@ -15,7 +15,6 @@
 // Глобальные конфигурационные переменные
 extern int PARALLEL_THRESHOLD;
 extern int SEQUENTIAL_THRESHOLD;
-extern int MAX_DEPTH;
 extern int MAX_THREADS;
 extern int ARRAY_SIZE;
 extern int ACTIVE_THREADS;
@@ -28,7 +27,6 @@ typedef struct {
     int* arr;
     int left;
     int right;
-    int depth;
 } thread_data_t;
 
 typedef struct {

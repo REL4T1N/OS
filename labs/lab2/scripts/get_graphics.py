@@ -11,7 +11,7 @@ plt.switch_backend('Agg')
 
 def parse_logs(filename):
     data = {
-        'size': [], 'depth': [], 'threshold': [],
+        'size': [], 'threads': [], 'threshold': [],
         'sequential': [], 'parallel': [], 'speedup': [],
         'iteration': []
     }
@@ -26,10 +26,11 @@ def parse_logs(filename):
                     current_iteration = int(match.group(1))
                 continue
                 
-            match = re.search(r'Размер:\s+(\d+).*?Глубина:\s+(\d+).*?Порог пар\.:\s+(\d+).*?Послед\.:\s+([\d.]+).*?Паралл\.:\s+([\d.]+).*?Ускорение:\s+([\d.]+)', line)
+            # ОБНОВЛЕННЫЙ РЕГУЛЯРНЫЙ ВЫРАЖЕНИЕ: убрал "Глубина", добавил "Потоки"
+            match = re.search(r'Размер:\s+(\d+).*?Потоки:\s+(\d+).*?Порог пар\.:\s+(\d+).*?Послед\.:\s+([\d.]+).*?Паралл\.:\s+([\d.]+).*?Ускорение:\s+([\d.]+)', line)
             if match:
                 data['size'].append(int(match.group(1)))
-                data['depth'].append(int(match.group(2)))
+                data['threads'].append(int(match.group(2)))  # Теперь threads вместо depth
                 data['threshold'].append(int(match.group(3)))
                 data['sequential'].append(float(match.group(4)))
                 data['parallel'].append(float(match.group(5)))
@@ -44,17 +45,17 @@ def calculate_averages(data):
     
     groups = defaultdict(list)
     for i in range(len(data['size'])):
-        key = (data['size'][i], data['depth'][i], data['threshold'][i])
+        key = (data['size'][i], data['threads'][i], data['threshold'][i])
         groups[key].append(i)
     
     avg_data = {
-        'size': [], 'depth': [], 'threshold': [],
+        'size': [], 'threads': [], 'threshold': [],
         'sequential': [], 'parallel': [], 'speedup': []
     }
     
     for key, indices in groups.items():
         avg_data['size'].append(key[0])
-        avg_data['depth'].append(key[1])
+        avg_data['threads'].append(key[1])
         avg_data['threshold'].append(key[2])
         avg_data['sequential'].append(np.mean([data['sequential'][i] for i in indices]))
         avg_data['parallel'].append(np.mean([data['parallel'][i] for i in indices]))
@@ -63,9 +64,10 @@ def calculate_averages(data):
     return avg_data
 
 def plot_size_impact(data, output_dir, output_prefix=""):
+    # ОБНОВЛЕНО: фильтруем по threads=8 вместо depth=8
     filtered = {}
     for i in range(len(data['size'])):
-        if data['depth'][i] == 8 and data['threshold'][i] == 1000:
+        if data['threads'][i] == 8 and data['threshold'][i] == 1000:
             size = data['size'][i]
             filtered[size] = {
                 'sequential': data['sequential'][i],
@@ -106,54 +108,60 @@ def plot_size_impact(data, output_dir, output_prefix=""):
     
     return output_path
 
-def plot_depth_impact(data, output_dir, output_prefix=""):
+def plot_threads_impact(data, output_dir, output_prefix=""):
+    # НОВАЯ ФУНКЦИЯ: влияние количества потоков вместо глубины
     filtered = {}
-    for i in range(len(data['depth'])):
+    for i in range(len(data['threads'])):
         if data['size'][i] == 50000000 and data['threshold'][i] == 1000:
-            depth = data['depth'][i]
-            filtered[depth] = {
+            threads = data['threads'][i]
+            filtered[threads] = {
                 'sequential': data['sequential'][i],
                 'parallel': data['parallel'][i],
                 'speedup': data['speedup'][i]
             }
     
     if not filtered:
-        print("Нет данных для построения графиков влияния глубины")
+        print("Нет данных для построения графиков влияния количества потоков")
         return None
     
-    depths = sorted(filtered.keys())
-    sequential = [filtered[d]['sequential'] for d in depths]
-    parallel = [filtered[d]['parallel'] for d in depths]
-    speedup = [filtered[d]['speedup'] for d in depths]
+    threads_list = sorted(filtered.keys())
+    sequential = [filtered[t]['sequential'] for t in threads_list]
+    parallel = [filtered[t]['parallel'] for t in threads_list]
+    speedup = [filtered[t]['speedup'] for t in threads_list]
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     
-    ax1.plot(depths, sequential, 'o-', label='Последовательная', linewidth=2)
-    ax1.plot(depths, parallel, 'o-', label='Параллельная', linewidth=2)
-    ax1.set_xlabel('Глубина параллелизма')
+    ax1.plot(threads_list, sequential, 'o-', label='Последовательная', linewidth=2)
+    ax1.plot(threads_list, parallel, 'o-', label='Параллельная', linewidth=2)
+    ax1.set_xlabel('Количество потоков')
     ax1.set_ylabel('Время (секунды)')
-    ax1.set_title('Время выполнения vs Глубина параллелизма')
+    ax1.set_title('Время выполнения vs Количество потоков')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
-    ax2.plot(depths, speedup, 'o-r', linewidth=2)
-    ax2.set_xlabel('Глубина параллелизма')
+    ax2.plot(threads_list, speedup, 'o-r', linewidth=2)
+    ax2.set_xlabel('Количество потоков')
     ax2.set_ylabel('Ускорение')
-    ax2.set_title('Ускорение vs Глубина параллелизма')
+    ax2.set_title('Ускорение vs Количество потоков')
     ax2.grid(True, alpha=0.3)
+    
+    # Добавим вертикальную линию на 12 потоков (hardware threads)
+    ax2.axvline(x=12, color='gray', linestyle='--', alpha=0.7, label='12 HW threads')
+    ax2.legend()
     
     plt.tight_layout()
     
-    output_path = os.path.join(output_dir, f'{output_prefix}depth_impact.png')
+    output_path = os.path.join(output_dir, f'{output_prefix}threads_impact.png')
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
     
     return output_path
 
 def plot_threshold_impact(data, output_dir, output_prefix=""):
+    # ОБНОВЛЕНО: фильтруем по threads=8 вместо depth=4
     filtered = {}
     for i in range(len(data['threshold'])):
-        if data['size'][i] == 50000000 and data['depth'][i] == 4:
+        if data['size'][i] == 50000000 and data['threads'][i] == 8:
             threshold = data['threshold'][i]
             filtered[threshold] = {
                 'sequential': data['sequential'][i],
@@ -221,12 +229,12 @@ if __name__ == "__main__":
         print(f"Построение графиков из: {filename}")
         
         size_path = plot_size_impact(data, output_dir, file_prefix)
-        depth_path = plot_depth_impact(data, output_dir, file_prefix)
+        threads_path = plot_threads_impact(data, output_dir, file_prefix)  # ИЗМЕНИЛ НАЗВАНИЕ
         threshold_path = plot_threshold_impact(data, output_dir, file_prefix)
         
         print("Графики созданы:")
         if size_path: print(f"  {size_path}")
-        if depth_path: print(f"  {depth_path}")
+        if threads_path: print(f"  {threads_path}")
         if threshold_path: print(f"  {threshold_path}")
         
     except FileNotFoundError:
