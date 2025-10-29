@@ -17,10 +17,8 @@
 - Проводить исследование зависимости ускорения от входных данных и количества потоков
 
 ## 📚 Литература
-1. "Introduction to Algorithms" (Cormen, Leiserson, Rivest, Stein) - алгоритмы сортировки
-2. "The C Programming Language" (Kernighan, Ritchie) - основы языка C
-3. POSIX Threads Programming Guide - работа с pthread
-4. Linux man pages: pthread_create, pthread_join, pthread_mutex
+1. POSIX Threads Programming Guide - работа с pthread
+2. Linux man pages: pthread_create, pthread_join, pthread_mutex
 
 ## ⚙️ Требования к системе
 - Компилятор GCC
