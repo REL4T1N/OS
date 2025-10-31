@@ -2,11 +2,6 @@
 #include "common.h"
 
 void getRandomArray(int arr[], int size, int maxValue) {
-    static int seeded = 0;
-    if (!seeded) {
-        srand(time(NULL));
-        seeded = 1;
-    }
     for (int i = 0; i < size; i++) {
         arr[i] = rand() % maxValue;
     }

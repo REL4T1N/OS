@@ -8,7 +8,7 @@ parent
 child
 child.exe
 gcc
-strace.txt
+strace*
 *.exe
 venv
 old_version
