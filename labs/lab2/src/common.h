@@ -27,6 +27,8 @@ typedef struct {
     int* arr;
     int left;
     int right;
+
+    int error_code;
 } thread_data_t;
 
 typedef struct {
@@ -37,10 +39,11 @@ typedef struct {
 } metrics_t;
 
 // Утилиты
+int init_mutex();
 double get_time();
 void print_usage(const char* program_name);
-void parse_arguments(int argc, char* argv[]);
-void init_test_data(int size);
+int parse_arguments(int argc, char* argv[]);
+int init_test_data(int size);
 void cleanup_test_data();
 
 #endif

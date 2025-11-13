@@ -98,16 +98,8 @@ full-test: test graphics
 full-benchmark: benchmark benchmark-graphics
 	@echo "Полный бенчмарк завершен!"
 
-clean:
-	rm -f $(TARGET)
-	rm -rf $(RESULTS_DIR)
-	rm -rf $(VENV)
-
 clean-venv:
 	rm -rf $(VENV)
-
-clean-results:
-	rm -rf $(RESULTS_DIR)
 
 help:
 	@echo "Доступные команды:"
@@ -124,7 +116,5 @@ help:
 	@echo "  test-threshold    - тест порогов (1 раз, только консоль)"
 	@echo "  test-single       - одиночный тест (1 раз, только консоль)"
 	@echo "  venv              - создание виртуального окружения"
-	@echo "  clean             - удаление ВСЕХ сгенерированных файлов"
 	@echo "  clean-venv        - удаление только виртуального окружения"
-	@echo "  clean-results     - удаление только результатов"
 	@echo "  help              - показать эту справку"

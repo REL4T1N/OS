@@ -16,13 +16,36 @@ int isSorted(int arr[], int size) {
     return 1;
 }
 
-void merge(int arr[], int left, int right, int mid) {
+int arraysEqual(int arr1[], int arr2[], int size) {
+    for (int i = 0; i < size; i++) {
+        if (arr1[i] != arr2[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int merge(int arr[], int left, int right, int mid) {
     int i, j, k;
     int n1 = mid - left + 1;
     int n2 = right - mid;
 
+    // printf("DEBUG merge: left=%d, right=%d, mid=%d, n1=%d, n2=%d\n", left, right, mid, n1, n2);
+
     int* L = (int*)malloc(n1*sizeof(int));
+    if (L == NULL) {
+        // printf("ERROR: Failed to allocate L[%d]\n", n1);        
+        return -1;
+    }
+
     int* R = (int*)malloc(n2*sizeof(int));
+    if (R == NULL) {
+        // printf("ERROR: Failed to allocate R[%d]\n", n2);
+        free(L);
+        return -1;
+    }
+
+    // printf("DEBUG merge: arrays allocated successfully\n");
 
     for (i = 0; i < n1; i++) {
         L[i] = arr[left + i];
@@ -46,7 +69,10 @@ void merge(int arr[], int left, int right, int mid) {
     while (i < n1) arr[k++] = L[i++];
     while (j < n2) arr[k++] = R[j++];
 
+    // printf("DEBUG merge: merging completed, freeing memory\n");
     free(L); free(R);
+    // printf("DEBUG merge: memory freed\n");
+    return 0;
 }
 
 void insertSort(int arr[], int left, int right) {
@@ -62,18 +88,20 @@ void insertSort(int arr[], int left, int right) {
     }
 }
 
-void sequentialMergeSort(int arr[], int left, int right) {
-    if (left >= right) return;
+int sequentialMergeSort(int arr[], int left, int right) {
+    if (left >= right) return 0;
 
     if (right - left < SEQUENTIAL_THRESHOLD) {
         insertSort(arr, left, right);
-        return;
+        return 0;
     }
 
     int mid = left + (right - left) / 2;
-    sequentialMergeSort(arr, left, mid);
-    sequentialMergeSort(arr, mid + 1, right);
-    merge(arr, left, right, mid);
+    if (sequentialMergeSort(arr, left, mid) != 0) {return -1;}
+    if (sequentialMergeSort(arr, mid + 1, right) != 0) {return -1;}
+    
+    if (merge(arr, left, right, mid) != 0) {return -1;}
+    return 0;
 }
 
 void* parallelMergeSortThread(void* arg) {
@@ -82,90 +110,186 @@ void* parallelMergeSortThread(void* arg) {
     int left = data->left;
     int right = data->right;
 
+    if (data->error_code != 0) {
+        free(data);
+        return NULL;
+    }
+    
+    int res;
     // Базовый случай - маленький массив
     if (right - left < PARALLEL_THRESHOLD) {
-        sequentialMergeSort(arr, left, right);
+        res = sequentialMergeSort(arr, left, right);
+        if (res != 0) {
+            data->error_code = res;
+        }
         free(data);
         return NULL;
     }
 
     int mid = left + (right - left) / 2;
+    int threads_created = 0;
 
-    pthread_mutex_lock(&THREAD_MUTEX);
+    if (pthread_mutex_lock(&THREAD_MUTEX) != 0) {
+        data->error_code = -1;
+        // free(data);
+        return NULL;
+    }
+
     int availableThreads = MAX_THREADS - ACTIVE_THREADS;
-    // printf("ДО проверки: left=%d, right=%d, active=%d, max=%d, available=%d\n", 
-    //        left, right, ACTIVE_THREADS, MAX_THREADS, availableThreads);
     int can_create_threads = (availableThreads >= 2);
-    pthread_mutex_unlock(&THREAD_MUTEX);
-
+    
+    pthread_mutex_unlock(&THREAD_MUTEX); 
     if (can_create_threads) {
         // Резервируем потоки
-        pthread_mutex_lock(&THREAD_MUTEX);
+        if (pthread_mutex_lock(&THREAD_MUTEX) != 0) {
+            data->error_code = -1;
+            // free(data);
+            return NULL;
+        }
         ACTIVE_THREADS += 2;
-        // printf("СОЗДАЮ потоки: active стало=%d\n", ACTIVE_THREADS);
-        pthread_mutex_unlock(&THREAD_MUTEX);
+        pthread_mutex_unlock(&THREAD_MUTEX); 
+        threads_created = 1;
 
         pthread_t left_thread, right_thread;
         int left_created = 0, right_created = 0;
+        thread_data_t* left_data = NULL;
+        thread_data_t* right_data = NULL;
 
-        thread_data_t* left_data = (thread_data_t*)malloc(sizeof(thread_data_t));
-        thread_data_t* right_data = (thread_data_t*)malloc(sizeof(thread_data_t));
-
-        left_data->arr = arr;
-        left_data->left = left;
-        left_data->right = mid;
-
-        right_data->arr = arr;
-        right_data->left = mid + 1;
-        right_data->right = right;
-
-        left_created = (pthread_create(&left_thread, NULL, parallelMergeSortThread, left_data) == 0);
-        right_created = (pthread_create(&right_thread, NULL, parallelMergeSortThread, right_data) == 0);
-
-        // printf("Создано потоков: left=%d, right=%d\n", left_created, right_created);
-
-        if (left_created && right_created) {
-            pthread_join(left_thread, NULL);
-            pthread_join(right_thread, NULL);
+        left_data = (thread_data_t*)malloc(sizeof(thread_data_t));
+        if (left_data == NULL) {
+            data->error_code = -2;
+            threads_created = 0;
         } else {
-            // Если не удалось создать - освобождаем память и работаем последовательно
-            if (!left_created) free(left_data);
-            if (!right_created) free(right_data);
-            sequentialMergeSort(arr, left, mid);
-            sequentialMergeSort(arr, mid + 1, right);
+            right_data = (thread_data_t*)malloc(sizeof(thread_data_t));
+            if (right_data == NULL) {
+                data->error_code = -2;
+                free(left_data);
+                threads_created = 0;
+            }
         }
 
-        // Возвращаем потоки
-        pthread_mutex_lock(&THREAD_MUTEX);
-        ACTIVE_THREADS -= 2;
-        // printf("ЗАВЕРШИЛ потоки: active стало=%d\n", ACTIVE_THREADS);
-        pthread_mutex_unlock(&THREAD_MUTEX);
+        if (threads_created && data->error_code == 0) {
+            left_data->arr = arr;
+            left_data->left = left;
+            left_data->right = mid;
+            left_data->error_code = 0;
+
+            right_data->arr = arr;
+            right_data->left = mid + 1;
+            right_data->right = right;
+            right_data->error_code = 0;
+
+            left_created = (pthread_create(&left_thread, NULL, parallelMergeSortThread, left_data) == 0);
+            right_created = (pthread_create(&right_thread, NULL, parallelMergeSortThread, right_data) == 0);
+
+            if (left_created && right_created) {
+                if (pthread_join(left_thread, NULL) != 0) {
+                    data->error_code = -3;
+                }
+                if (pthread_join(right_thread, NULL) != 0) {
+                    data->error_code = -3;
+                }
+
+                // проверка ошибок в дочерних потоках
+                if (left_data->error_code != 0) {
+                    data->error_code = left_data->error_code;
+                }
+                if (right_data->error_code != 0) {
+                    data->error_code = right_data->error_code;
+                }
+            } else {
+                threads_created = 0;
+                if (!left_created) free(left_data);
+                if (!right_created) free(right_data);
+            }
+        }
+
+        if (left_data != NULL && threads_created) {
+            free(left_data);
+        }
+        if (right_data != NULL && threads_created) {
+            free(right_data);
+        }        
+
+        if (!threads_created && data->error_code == 0) {
+            res = sequentialMergeSort(arr, left, mid);
+            if (res != 0) {
+                data->error_code = res;
+            } else {
+                res = sequentialMergeSort(arr, mid + 1, right);
+                if (res != 0) {
+                    data->error_code = res;
+                }
+            }
+        }
+        
+        if (threads_created) {
+            // Возвращаем потоки
+            if (pthread_mutex_lock(&THREAD_MUTEX) != 0) {
+                if (data->error_code == 0) {
+                    data->error_code = -1;
+                }
+            } else {
+                ACTIVE_THREADS -= 2;
+                pthread_mutex_unlock(&THREAD_MUTEX);
+            }
+        }
     } else {
-        // printf("НЕ создаю потоки - недостаточно available\n");
-        sequentialMergeSort(arr, left, mid);
-        sequentialMergeSort(arr, mid + 1, right);
+        res = sequentialMergeSort(arr, left, mid);
+        if (res != 0) {
+            data->error_code = res;
+            free(data);
+            return NULL;
+        }
+
+        res = sequentialMergeSort(arr, mid + 1, right);
+        if (res != 0) {
+            data->error_code = res;
+            free(data);
+            return NULL;
+        }
     }
 
-    merge(arr, left, right, mid);
-    free(data);
+    if (data->error_code == 0) {
+        res = merge(arr, left, right, mid);
+        if (res != 0) {
+            data->error_code = res;
+        }
+    }
+
+    // free(data);
     return NULL;
 }
 
-void parallelMergeSort(int arr[], int size) {
-    if (size <= 1) return;
+int parallelMergeSort(int arr[], int size) {
+    if (size <= 1) return 0;
 
-    pthread_mutex_lock(&THREAD_MUTEX);
+    if (pthread_mutex_lock(&THREAD_MUTEX) != 0 ) {
+        return -1;
+    }
     ACTIVE_THREADS = 1;
     pthread_mutex_unlock(&THREAD_MUTEX);
 
     thread_data_t* data = (thread_data_t*)malloc(sizeof(thread_data_t));
+    if (data == NULL) {
+        return -2;
+    }
+
     data->arr = arr; 
     data->left = 0; 
     data->right = size - 1;
+    data->error_code = 0;
 
     parallelMergeSortThread(data);
-    
-    pthread_mutex_lock(&THREAD_MUTEX);
-    ACTIVE_THREADS = 0;
-    pthread_mutex_unlock(&THREAD_MUTEX);
+
+    int error_code = data->error_code;
+
+    if (pthread_mutex_lock(&THREAD_MUTEX) != 0) {
+        error_code = (error_code == 0) ? -1 : error_code;
+    } else {
+        ACTIVE_THREADS = 0;
+        pthread_mutex_unlock(&THREAD_MUTEX);
+    }
+
+    return error_code;
 }
