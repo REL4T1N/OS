@@ -131,7 +131,6 @@ void* parallelMergeSortThread(void* arg) {
 
     if (pthread_mutex_lock(&THREAD_MUTEX) != 0) {
         data->error_code = -1;
-        // free(data);
         return NULL;
     }
 
@@ -143,7 +142,6 @@ void* parallelMergeSortThread(void* arg) {
         // Резервируем потоки
         if (pthread_mutex_lock(&THREAD_MUTEX) != 0) {
             data->error_code = -1;
-            // free(data);
             return NULL;
         }
         ACTIVE_THREADS += 2;
@@ -257,7 +255,6 @@ void* parallelMergeSortThread(void* arg) {
         }
     }
 
-    // free(data);
     return NULL;
 }
 
