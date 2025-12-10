@@ -151,6 +151,8 @@ int main(int argc, char* argv[]) {
         strcpy(new_msg.sender, login);
         new_msg.type = MSG_TYPE_TEXT;
         new_msg.send_time = time(NULL);
+        new_msg.created_time = time(NULL);  // Время создания на клиенте
+        new_msg.send_time = time(NULL);     // По умолчанию отправка сейчас
         
         if (strncmp(input, "@", 1) == 0) {
             // Личное сообщение
@@ -173,6 +175,7 @@ int main(int argc, char* argv[]) {
         } else if (strncmp(input, "delay ", 6) == 0) {
             // Отложенное сообщение - новая логика парсинга
             new_msg.type = MSG_TYPE_DELAYED;
+            new_msg.created_time = time(NULL);
             
             // Парсим: delay @user время текст
             char* args = input + 6;
@@ -221,7 +224,7 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             
-            new_msg.send_time = time(NULL) + delay_seconds;
+            new_msg.send_time = new_msg.created_time + delay_seconds;
             strcpy(new_msg.text, text);
             
             clear_input_line();

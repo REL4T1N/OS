@@ -12,8 +12,6 @@
 
 // Порт для входящих сообщений (PUSH/PULL)
 #define INPUT_PORT 7777
-// Порт для отложенных сообщений
-#define DELAYED_PORT 7778
 // Порт для рассылки сообщений (PUB/SUB)
 #define OUTPUT_PORT 7779
 #define SERVER_IP "tcp://127.0.0.1"
@@ -30,7 +28,8 @@ typedef struct {
     char recipient[32];
     char text[256];
     int type;
-    time_t send_time; // Для отложенных сообщений
+    time_t created_time;    // Когда сообщение создано на клиенте
+    time_t send_time;       // Когда должно быть отправлено (для отложенных)
 } message_t;
 
 // Функция для печати текущего времени
@@ -38,6 +37,12 @@ void print_time() {
     time_t now = time(NULL);
     struct tm *tm = localtime(&now);
     printf("[%02d:%02d:%02d] ", tm->tm_hour, tm->tm_min, tm->tm_sec);
+}
+
+// Функция для форматированного вывода времени
+void print_time_struct(time_t t) {
+    struct tm *tm = localtime(&t);
+    printf("%02d:%02d:%02d", tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
 #endif

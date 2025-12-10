@@ -12,7 +12,7 @@ typedef struct {
 typedef struct {
     message_t msg;
     int active;
-    time_t original_send_time; // Когда должно быть отправлено
+    time_t original_send_time;
 } delayed_message_t;
 
 client_info_t clients[MAX_CLIENTS];
@@ -22,7 +22,6 @@ int delayed_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t delayed_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Добавление/обновление клиента
 void update_client(const char* login, const char* address) {
     pthread_mutex_lock(&clients_mutex);
     
@@ -47,7 +46,6 @@ void update_client(const char* login, const char* address) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
-// Удаление клиента
 void remove_client(const char* login) {
     pthread_mutex_lock(&clients_mutex);
     
@@ -65,7 +63,6 @@ void remove_client(const char* login) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
-// Добавление отложенного сообщения
 void add_delayed_message(message_t* msg) {
     pthread_mutex_lock(&delayed_mutex);
     
@@ -75,15 +72,25 @@ void add_delayed_message(message_t* msg) {
         delayed_msgs[delayed_count].original_send_time = msg->send_time;
         delayed_count++;
         
-        struct tm* tm = localtime(&msg->send_time);
-        printf("Отложенное сообщение добавлено: от %s к %s (отправка в %02d:%02d:%02d, сейчас: ", 
-               msg->sender, msg->recipient,
-               tm->tm_hour, tm->tm_min, tm->tm_sec);
-        
         time_t now = time(NULL);
-        struct tm* now_tm = localtime(&now);
-        printf("%02d:%02d:%02d)\n", 
-               now_tm->tm_hour, now_tm->tm_min, now_tm->tm_sec);
+        struct tm* tm_now = localtime(&now);
+        struct tm* tm_send = localtime(&msg->send_time);
+        int diff = (int)difftime(msg->send_time, now);
+        
+        // printf("[%02d:%02d:%02d] Отложено сообщение от %s к %s (отправится в %02d:%02d:%02d, через %d сек)\n",
+        //        tm_now->tm_hour, tm_now->tm_min, tm_now->tm_sec,
+        //        msg->sender, msg->recipient,
+        //        tm_send->tm_hour, tm_send->tm_min, tm_send->tm_sec,
+        //        diff);
+                printf("[");
+        print_time_struct(now);
+        printf("] Отложено: %s -> %s\n", msg->sender, msg->recipient);
+        printf("    Создано: ");
+        print_time_struct(msg->created_time);
+        printf(", Отправка: ");
+        print_time_struct(msg->send_time);
+        printf(" (через %d сек)\n", diff);
+        printf("    Текст: %s\n", msg->text);
     } else {
         printf("Достигнут лимит отложенных сообщений!\n");
     }
@@ -91,17 +98,11 @@ void add_delayed_message(message_t* msg) {
     pthread_mutex_unlock(&delayed_mutex);
 }
 
-// Обработчик отложенных сообщений
+// Обработчик отложенных сообщений теперь получает publisher как аргумент
 void* delayed_messages_thread(void* arg) {
-    void* context = zmq_ctx_new();
-    void* publisher = zmq_socket(context, ZMQ_PUB);
+    void* publisher = (void*)arg; // publisher передается как аргумент
     
-    if (zmq_bind(publisher, "tcp://*:7778") != 0) {
-        printf("Ошибка привязки сокета 7778\n");
-        return NULL;
-    }
-    
-    printf("Поток отложенных сообщений запущен на порту 7778\n");
+    printf("Поток отложенных сообщений запущен\n");
     
     while (1) {
         time_t now = time(NULL);
@@ -112,25 +113,34 @@ void* delayed_messages_thread(void* arg) {
             if (delayed_msgs[i].active && 
                 delayed_msgs[i].original_send_time <= now) {
                 
-                // Меняем тип на обычное сообщение перед отправкой
+                // Меняем тип на обычное сообщение
                 delayed_msgs[i].msg.type = MSG_TYPE_TEXT;
-                
-                // Обновляем время отправки на текущее
                 delayed_msgs[i].msg.send_time = now;
                 
-                // Отправляем отложенное сообщение
+                // Отправляем через ОСНОВНОЙ publisher (порт 7779)
                 zmq_msg_t msg;
                 zmq_msg_init_size(&msg, sizeof(message_t));
                 memcpy(zmq_msg_data(&msg), &delayed_msgs[i].msg, sizeof(message_t));
                 zmq_msg_send(&msg, publisher, 0);
                 zmq_msg_close(&msg);
                 
-                struct tm* tm = localtime(&now);
-                printf("[%02d:%02d:%02d] Отправлено отложенное сообщение от %s к %s: %s\n",
-                       tm->tm_hour, tm->tm_min, tm->tm_sec,
+                // struct tm* tm = localtime(&now);
+                // printf("[%02d:%02d:%02d] Отправлено отложенное сообщение: %s -> %s: %s\n",
+                //        tm->tm_hour, tm->tm_min, tm->tm_sec,
+                //        delayed_msgs[i].msg.sender, 
+                //        delayed_msgs[i].msg.recipient,
+                //        delayed_msgs[i].msg.text);
+                printf("[");
+                print_time_struct(now);
+                printf("] Отправлено отложенное сообщение: %s -> %s\n",
                        delayed_msgs[i].msg.sender, 
-                       delayed_msgs[i].msg.recipient,
-                       delayed_msgs[i].msg.text);
+                       delayed_msgs[i].msg.recipient);
+                printf("    Создано: ");
+                print_time_struct(delayed_msgs[i].msg.created_time);
+                printf(", должно было отправиться: ");
+                print_time_struct(delayed_msgs[i].original_send_time);
+                printf("\n    Текст: %s\n", delayed_msgs[i].msg.text);
+                    
                 
                 delayed_msgs[i].active = 0;
             }
@@ -149,30 +159,30 @@ int main() {
     
     memset(delayed_msgs, 0, sizeof(delayed_msgs));
     
-    // Запуск потока для отложенных сообщений
-    pthread_t delayed_thread;
-    pthread_create(&delayed_thread, NULL, delayed_messages_thread, NULL);
-    
     void* context = zmq_ctx_new();
     
     // Сокет для приема сообщений от клиентов
     void* receiver = zmq_socket(context, ZMQ_PULL);
-    
     if (zmq_bind(receiver, "tcp://*:7777") != 0) {
         printf("Ошибка привязки сокета 7777\n");
         return 1;
     }
     
-    // Сокет для рассылки сообщений клиентам
+    // Сокет для рассылки сообщений клиентам (ОСНОВНОЙ)
     void* publisher = zmq_socket(context, ZMQ_PUB);
     if (zmq_bind(publisher, "tcp://*:7779") != 0) {
         printf("Ошибка привязки сокета 7779\n");
         return 1;
     }
     
-    printf("Основной сокет запущен на порту 7777\n");
-    printf("Сокет рассылки запущен на порту 7779\n");
-    printf("Сервер запущен. Ожидание подключений...\n");
+    printf("Сервер запущен:\n");
+    printf("  7777 - прием сообщений от клиентов\n");
+    printf("  7779 - рассылка сообщений клиентам\n");
+    printf("Ожидание подключений...\n\n");
+    
+    // Запускаем поток для отложенных сообщений, передаем publisher
+    pthread_t delayed_thread;
+    pthread_create(&delayed_thread, NULL, delayed_messages_thread, publisher);
     
     while (1) {
         message_t msg;
@@ -191,31 +201,35 @@ int main() {
         memcpy(&msg, zmq_msg_data(&zmq_msg), sizeof(message_t));
         zmq_msg_close(&zmq_msg);
         
-        // Обрабатываем тип сообщения
         time_t now = time(NULL);
         struct tm* tm = localtime(&now);
         
         switch (msg.type) {
             case MSG_TYPE_JOIN:
-                printf("[%02d:%02d:%02d] %s присоединился к чату\n", 
-                       tm->tm_hour, tm->tm_min, tm->tm_sec, msg.sender);
+                printf("[");
+                print_time_struct(now);
+                printf("] %s присоединился\n", msg.sender);
                 update_client(msg.sender, msg.text);
                 break;
                 
             case MSG_TYPE_LEAVE:
-                printf("[%02d:%02d:%02d] %s покинул чат\n", 
-                       tm->tm_hour, tm->tm_min, tm->tm_sec, msg.sender);
+                printf("[");
+                print_time_struct(now);
+                printf("] %s вышел\n", msg.sender);
                 remove_client(msg.sender);
                 break;
                 
             case MSG_TYPE_TEXT:
-                printf("[%02d:%02d:%02d] %s -> %s: %s\n", 
-                    tm->tm_hour, tm->tm_min, tm->tm_sec,
-                    msg.sender, msg.recipient, msg.text);
+                printf("[");
+                print_time_struct(now);
+                printf("] %s -> %s: %s\n", 
+                       msg.sender, msg.recipient, msg.text);
+                printf("    Создано: ");
+                print_time_struct(msg.created_time);
+                printf("\n");
                 
-                // Не рассылаем сообщения, адресованные себе
+                // Рассылаем только если не себе
                 if (strcmp(msg.sender, msg.recipient) != 0) {
-                    // Рассылаем сообщение всем клиентам
                     zmq_msg_t pub_msg;
                     zmq_msg_init_size(&pub_msg, sizeof(message_t));
                     memcpy(zmq_msg_data(&pub_msg), &msg, sizeof(message_t));
@@ -225,20 +239,30 @@ int main() {
                 break;
                 
             case MSG_TYPE_DELAYED: {
-                time_t send_time = msg.send_time;
-                struct tm* send_tm = localtime(&send_time);
-                printf("[%02d:%02d:%02d] Отложенное сообщение от %s к %s (отправка в %02d:%02d:%02d): %s\n", 
-                       tm->tm_hour, tm->tm_min, tm->tm_sec,
-                       msg.sender, msg.recipient,
-                       send_tm->tm_hour, send_tm->tm_min, send_tm->tm_sec,
-                       msg.text);
+                int diff = (int)difftime(msg.send_time, now);
+                
+                printf("[");
+                print_time_struct(now);
+                printf("] Получено ОТЛОЖЕННОЕ сообщение:\n");
+                printf("    От: %s, Кому: %s\n", msg.sender, msg.recipient);
+                printf("    Создано: ");
+                print_time_struct(msg.created_time);
+                printf(", Получено сервером: ");
+                print_time_struct(now);
+                printf("\n");
+                printf("    Запланированная отправка: ");
+                print_time_struct(msg.send_time);
+                printf(" (через %d секунд)\n", diff);
+                printf("    Текст: %s\n", msg.text);
+                
                 add_delayed_message(&msg);
                 break;
             }
                 
             default:
-                printf("[%02d:%02d:%02d] Неизвестный тип сообщения: %d\n", 
-                       tm->tm_hour, tm->tm_min, tm->tm_sec, msg.type);
+                printf("[");
+                print_time_struct(now);
+                printf("] Неизвестный тип: %d\n", msg.type);
         }
     }
     
