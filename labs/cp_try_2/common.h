@@ -10,9 +10,13 @@
 #include <pthread.h>
 #include <stdarg.h>
 
-#define INPUT_PORT "7777"     // Для входящих сообщений (PULL)
-#define OUTPUT_PORT "7778"    // Для исходящих сообщений (PUB/SUB)
-#define SERVER_IP "tcp://127.0.0.1:"
+// Порт для входящих сообщений (PUSH/PULL)
+#define INPUT_PORT 7777
+// Порт для отложенных сообщений
+#define DELAYED_PORT 7778
+// Порт для рассылки сообщений (PUB/SUB)
+#define OUTPUT_PORT 7779
+#define SERVER_IP "tcp://127.0.0.1"
 
 // Типы сообщений
 #define MSG_TYPE_TEXT 1

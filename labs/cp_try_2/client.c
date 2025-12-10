@@ -1,4 +1,5 @@
 #include "common.h"
+#include <locale.h>
 
 volatile int running = 1;
 pthread_mutex_t display_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -23,7 +24,7 @@ void safe_print(const char* format, ...) {
 
 // Функция для очистки строки ввода
 void clear_input_line() {
-    printf("\r\033[K"); // Возврат каретки и очистка строки
+    printf("\r\033[K");
     fflush(stdout);
 }
 
@@ -33,7 +34,7 @@ void* receive_messages(void* arg) {
     char* login = data->login;
     
     void* subscriber = zmq_socket(context, ZMQ_SUB);
-    zmq_connect(subscriber, SERVER_IP OUTPUT_PORT);
+    zmq_connect(subscriber, "tcp://127.0.0.1:7779"); // Исправляем порт
     zmq_setsockopt(subscriber, ZMQ_SUBSCRIBE, "", 0);
     
     while (running) {
@@ -42,11 +43,10 @@ void* receive_messages(void* arg) {
         
         zmq_msg_init(&zmq_msg);
         if (zmq_msg_recv(&zmq_msg, subscriber, ZMQ_DONTWAIT) == -1) {
-            usleep(100000); // 100ms пауза чтобы не грузить CPU
+            usleep(100000);
             continue;
         }
         
-        // Проверяем размер сообщения
         if (zmq_msg_size(&zmq_msg) != sizeof(message_t)) {
             zmq_msg_close(&zmq_msg);
             continue;
@@ -57,22 +57,20 @@ void* receive_messages(void* arg) {
         
         // Показываем только если сообщение адресовано нам или всем
         if (strcmp(msg.recipient, "ALL") == 0 || 
-            strcmp(msg.recipient, "me") == 0 ||
             strcmp(msg.recipient, login) == 0) {
             
-            // Не показываем свои же сообщения (чтобы не было дублирования)
             if (strcmp(msg.sender, login) != 0) {
-                clear_input_line(); // Очищаем строку ввода
+                clear_input_line();
                 print_time();
                 safe_print("%s: %s\n", msg.sender, msg.text);
-                printf("%s> ", login); // Восстанавливаем приглашение
+                printf("%s> ", login);
                 fflush(stdout);
             }
         }
     }
     
     zmq_close(subscriber);
-    free(data); // Освобождаем память
+    free(data);
     return NULL;
 }
 
@@ -81,6 +79,9 @@ int main(int argc, char* argv[]) {
         printf("Использование: %s <логин>\n", argv[0]);
         return 1;
     }
+
+    setlocale(LC_ALL, "");
+    setlocale(LC_CTYPE, "UTF-8");
     
     char login[32];
     strcpy(login, argv[1]);
@@ -89,7 +90,7 @@ int main(int argc, char* argv[]) {
     
     // Сокет для отправки сообщений на сервер
     void* sender = zmq_socket(context, ZMQ_PUSH);
-    zmq_connect(sender, SERVER_IP INPUT_PORT);
+    zmq_connect(sender, "tcp://127.0.0.1:7777");
     
     // Отправляем сообщение о подключении
     message_t join_msg;
@@ -108,10 +109,11 @@ int main(int argc, char* argv[]) {
     
     printf("Добро пожаловать, %s!\n", login);
     printf("Команды:\n");
-    printf("  @user сообщение  - отправить пользователю\n");
-    printf("  ALL сообщение    - отправить всем\n");
-    printf("  delay @user время сообщение - отложенное сообщение\n");
-    printf("  exit             - выход\n");
+    printf("  @user сообщение    - отправить пользователю\n");
+    printf("  ALL сообщение      - отправить всем\n");
+    printf("  сообщение          - отправить себе (для заметок)\n");
+    printf("  delay @user N текст - отложить сообщение на N секунд\n");
+    printf("  exit               - выход\n");
     printf("\n");
     
     // Подготовка данных для потока
@@ -169,43 +171,69 @@ int main(int argc, char* argv[]) {
             strcpy(new_msg.recipient, "ALL");
             strcpy(new_msg.text, input + 4);
         } else if (strncmp(input, "delay ", 6) == 0) {
-            // Отложенное сообщение
+            // Отложенное сообщение - новая логика парсинга
             new_msg.type = MSG_TYPE_DELAYED;
-            strcpy(new_msg.recipient, "ALL"); // По умолчанию всем
             
-            // Парсим аргументы
+            // Парсим: delay @user время текст
             char* args = input + 6;
-            char* recipient = strtok(args, " ");
+            char* recipient_str = strtok(args, " ");
             char* time_str = strtok(NULL, " ");
             char* text = strtok(NULL, "");
             
-            if (recipient && time_str && text) {
-                if (recipient[0] == '@') {
-                    strcpy(new_msg.recipient, recipient + 1);
-                } else {
-                    strcpy(new_msg.recipient, recipient);
-                }
-                
-                int delay_seconds = atoi(time_str);
-                if (delay_seconds > 0) {
-                    new_msg.send_time = time(NULL) + delay_seconds;
-                    strcpy(new_msg.text, text);
-                    
-                    clear_input_line();
-                    printf("Отложенное сообщение будет отправлено через %d секунд\n", delay_seconds);
-                    printf("%s> ", login);
-                    fflush(stdout);
-                } else {
-                    strcpy(new_msg.recipient, "ALL");
-                    strcpy(new_msg.text, input + 6);
-                }
-            } else {
-                strcpy(new_msg.recipient, "ALL");
-                strcpy(new_msg.text, input + 6);
+            if (!recipient_str || !time_str || !text) {
+                clear_input_line();
+                printf("Неправильный формат. Используйте: delay @user время сообщение\n");
+                printf("Пример: delay @Bob 10 Привет через 10 секунд!\n");
+                printf("%s> ", login);
+                fflush(stdout);
+                continue;
             }
+            
+            // Получатель
+            if (recipient_str[0] == '@') {
+                strcpy(new_msg.recipient, recipient_str + 1);
+            } else if (strcmp(recipient_str, "ALL") == 0) {
+                strcpy(new_msg.recipient, "ALL");
+            } else if (strcmp(recipient_str, "me") == 0) {
+                strcpy(new_msg.recipient, login);
+            } else {
+                // Возможно это число (время) - значит получатель ALL
+                char* endptr;
+                long num = strtol(recipient_str, &endptr, 10);
+                if (*endptr == '\0') {
+                    // Это число - значит формат delay время текст
+                    strcpy(new_msg.recipient, "ALL");
+                    text = time_str;  // Сдвигаем аргументы
+                    time_str = recipient_str;
+                    recipient_str = "ALL";
+                } else {
+                    strcpy(new_msg.recipient, recipient_str);
+                }
+            }
+            
+            // Время
+            int delay_seconds = atoi(time_str);
+            if (delay_seconds <= 0) {
+                clear_input_line();
+                printf("Время должно быть положительным числом секунд\n");
+                printf("%s> ", login);
+                fflush(stdout);
+                continue;
+            }
+            
+            new_msg.send_time = time(NULL) + delay_seconds;
+            strcpy(new_msg.text, text);
+            
+            clear_input_line();
+            printf("Отложенное сообщение для %s будет отправлено через %d секунд\n", 
+                   new_msg.recipient, delay_seconds);
+            printf("%s> ", login);
+            fflush(stdout);
+            
+            // Продолжаем - отправим сообщение
         } else {
-            // По умолчанию - всем
-            strcpy(new_msg.recipient, "ALL");
+            // По умолчанию - отправляем себе (для заметок)
+            strcpy(new_msg.recipient, login);
             strcpy(new_msg.text, input);
         }
         
@@ -213,14 +241,10 @@ int main(int argc, char* argv[]) {
         zmq_msg_t zmq_msg;
         zmq_msg_init_size(&zmq_msg, sizeof(message_t));
         memcpy(zmq_msg_data(&zmq_msg), &new_msg, sizeof(message_t));
-        
-        if (zmq_msg_send(&zmq_msg, sender, 0) == -1) {
-            perror("Ошибка отправки");
-        }
+        zmq_msg_send(&zmq_msg, sender, 0);
         zmq_msg_close(&zmq_msg);
     }
     
-    // Сообщаем о выходе
     running = 0;
     
     message_t leave_msg;
@@ -236,7 +260,6 @@ int main(int argc, char* argv[]) {
     zmq_msg_send(&msg, sender, 0);
     zmq_msg_close(&msg);
     
-    // Ждем завершения потока
     pthread_join(recv_thread, NULL);
     
     zmq_close(sender);
