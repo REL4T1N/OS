@@ -1,0 +1,14 @@
+[2025-12-10 22:54:41] [INFO] Server created (bind: *, port: 5555)
+[2025-12-10 22:54:41] [INFO] REP socket bound to tcp://*:5555
+[2025-12-10 22:54:42] [INFO] PUB socket bound to tcp://*:5556
+[2025-12-10 22:54:42] [INFO] PULL socket bound to tcp://*:5557
+[2025-12-10 22:54:42] [INFO] Server starting...
+[2025-12-10 22:54:43] [INFO] Stats: 0 messages processed
+[2025-12-10 22:54:53] [DEBUG] Processing REQ/REP message type 1 from test_user
+[2025-12-10 22:54:53] [INFO] Registration attempt from: test_user
+[2025-12-10 22:54:53] [INFO] No offline messages for test_user
+[2025-12-10 22:54:53] [INFO] User registered: test_user
+[2025-12-10 22:54:53] [DEBUG] Message processed, result: 0
+[2025-12-10 22:55:47] [INFO] Stats: 1 messages processed
+[2025-12-10 22:55:53] [INFO] Server stopping...
+[2025-12-10 22:55:53] [INFO] Server destroying...
