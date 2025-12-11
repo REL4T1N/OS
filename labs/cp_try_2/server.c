@@ -73,16 +73,9 @@ void add_delayed_message(message_t* msg) {
         delayed_count++;
         
         time_t now = time(NULL);
-        struct tm* tm_now = localtime(&now);
-        struct tm* tm_send = localtime(&msg->send_time);
         int diff = (int)difftime(msg->send_time, now);
         
-        // printf("[%02d:%02d:%02d] Отложено сообщение от %s к %s (отправится в %02d:%02d:%02d, через %d сек)\n",
-        //        tm_now->tm_hour, tm_now->tm_min, tm_now->tm_sec,
-        //        msg->sender, msg->recipient,
-        //        tm_send->tm_hour, tm_send->tm_min, tm_send->tm_sec,
-        //        diff);
-                printf("[");
+        printf("[");
         print_time_struct(now);
         printf("] Отложено: %s -> %s\n", msg->sender, msg->recipient);
         printf("    Создано: ");
@@ -123,13 +116,7 @@ void* delayed_messages_thread(void* arg) {
                 memcpy(zmq_msg_data(&msg), &delayed_msgs[i].msg, sizeof(message_t));
                 zmq_msg_send(&msg, publisher, 0);
                 zmq_msg_close(&msg);
-                
-                // struct tm* tm = localtime(&now);
-                // printf("[%02d:%02d:%02d] Отправлено отложенное сообщение: %s -> %s: %s\n",
-                //        tm->tm_hour, tm->tm_min, tm->tm_sec,
-                //        delayed_msgs[i].msg.sender, 
-                //        delayed_msgs[i].msg.recipient,
-                //        delayed_msgs[i].msg.text);
+            
                 printf("[");
                 print_time_struct(now);
                 printf("] Отправлено отложенное сообщение: %s -> %s\n",
@@ -141,7 +128,6 @@ void* delayed_messages_thread(void* arg) {
                 print_time_struct(delayed_msgs[i].original_send_time);
                 printf("\n    Текст: %s\n", delayed_msgs[i].msg.text);
                     
-                
                 delayed_msgs[i].active = 0;
             }
         }
@@ -219,41 +205,60 @@ int main() {
                 remove_client(msg.sender);
                 break;
                 
+            // case MSG_TYPE_TEXT:
+            //     printf("[");
+            //     print_time_struct(now);
+            //     printf("] %s -> %s: %s\n", 
+            //            msg.sender, msg.recipient, msg.text);
+            //     printf("    Создано: ");
+            //     print_time_struct(msg.created_time);
+            //     printf("\n");
+                
+            //     // Рассылаем только если не себе
+            //     if (strcmp(msg.sender, msg.recipient) != 0) {
+            //         zmq_msg_t pub_msg;
+            //         zmq_msg_init_size(&pub_msg, sizeof(message_t));
+            //         memcpy(zmq_msg_data(&pub_msg), &msg, sizeof(message_t));
+            //         zmq_msg_send(&pub_msg, publisher, 0);
+            //         zmq_msg_close(&pub_msg);
+            //     }
+            //     break;
             case MSG_TYPE_TEXT:
                 printf("[");
                 print_time_struct(now);
                 printf("] %s -> %s: %s\n", 
-                       msg.sender, msg.recipient, msg.text);
+                    msg.sender, msg.recipient, msg.text);
                 printf("    Создано: ");
                 print_time_struct(msg.created_time);
                 printf("\n");
                 
-                // Рассылаем только если не себе
-                if (strcmp(msg.sender, msg.recipient) != 0) {
-                    zmq_msg_t pub_msg;
-                    zmq_msg_init_size(&pub_msg, sizeof(message_t));
-                    memcpy(zmq_msg_data(&pub_msg), &msg, sizeof(message_t));
-                    zmq_msg_send(&pub_msg, publisher, 0);
-                    zmq_msg_close(&pub_msg);
-                }
+                // УБИРАЕМ проверку "если не себе" - рассылаем ВСЕ сообщения
+                // Включая сообщения себе
+                zmq_msg_t pub_msg;
+                zmq_msg_init_size(&pub_msg, sizeof(message_t));
+                memcpy(zmq_msg_data(&pub_msg), &msg, sizeof(message_t));
+                zmq_msg_send(&pub_msg, publisher, 0);
+                zmq_msg_close(&pub_msg);
+                
+                // Если получатель = отправитель, это сообщение себе
+                // Оно тоже должно быть доставлено
                 break;
                 
             case MSG_TYPE_DELAYED: {
-                int diff = (int)difftime(msg.send_time, now);
+                
+                // Парсим задержку из текста
+                if (strncmp(msg.text, "DELAY:", 6) == 0) {
+                    int delay_seconds = atoi(msg.text + 6);
+                    char* colon = strchr(msg.text + 6, ':');
+                    if (colon) {
+                        msg.send_time = now + delay_seconds;
+                        strcpy(msg.text, colon + 1);  // Извлекаем оригинальный текст
+                    }
+                }
                 
                 printf("[");
                 print_time_struct(now);
-                printf("] Получено ОТЛОЖЕННОЕ сообщение:\n");
-                printf("    От: %s, Кому: %s\n", msg.sender, msg.recipient);
-                printf("    Создано: ");
-                print_time_struct(msg.created_time);
-                printf(", Получено сервером: ");
-                print_time_struct(now);
-                printf("\n");
-                printf("    Запланированная отправка: ");
-                print_time_struct(msg.send_time);
-                printf(" (через %d секунд)\n", diff);
-                printf("    Текст: %s\n", msg.text);
+                printf("] Получено отложенное сообщение от %s\n", msg.sender);
                 
                 add_delayed_message(&msg);
                 break;

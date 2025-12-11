@@ -45,4 +45,17 @@ void print_time_struct(time_t t) {
     printf("%02d:%02d:%02d", tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
+// Используйте единый формат для всех
+void print_unified_time(time_t t, const char* prefix) {
+    struct tm *tm = localtime(&t);
+    printf("%s[%02d:%02d:%02d] ", prefix ? prefix : "", 
+           tm->tm_hour, tm->tm_min, tm->tm_sec);
+}
+
+// И в коде замените все print_time_struct на:
+void print_time_with_label(time_t t, const char* label) {
+    struct tm *tm = localtime(&t);
+    printf("%s: %02d:%02d:%02d", label, tm->tm_hour, tm->tm_min, tm->tm_sec);
+}
+
 #endif

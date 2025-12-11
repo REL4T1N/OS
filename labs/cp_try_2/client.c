@@ -34,7 +34,7 @@ void* receive_messages(void* arg) {
     char* login = data->login;
     
     void* subscriber = zmq_socket(context, ZMQ_SUB);
-    zmq_connect(subscriber, "tcp://127.0.0.1:7779"); // Исправляем порт
+    zmq_connect(subscriber, "tcp://127.0.0.1:7779"); 
     zmq_setsockopt(subscriber, ZMQ_SUBSCRIBE, "", 0);
     
     while (running) {
@@ -59,13 +59,13 @@ void* receive_messages(void* arg) {
         if (strcmp(msg.recipient, "ALL") == 0 || 
             strcmp(msg.recipient, login) == 0) {
             
-            if (strcmp(msg.sender, login) != 0) {
-                clear_input_line();
-                print_time();
-                safe_print("%s: %s\n", msg.sender, msg.text);
-                printf("%s> ", login);
-                fflush(stdout);
-            }
+            // if (strcmp(msg.sender, login) != 0) {
+            clear_input_line();
+            print_time();
+            safe_print("%s: %s\n", msg.sender, msg.text);
+            printf("%s> ", login);
+            fflush(stdout);
+            // }
         }
     }
     
@@ -99,7 +99,8 @@ int main(int argc, char* argv[]) {
     strcpy(join_msg.recipient, "SERVER");
     strcpy(join_msg.text, "присоединился");
     join_msg.type = MSG_TYPE_JOIN;
-    join_msg.send_time = time(NULL);
+    join_msg.created_time = time(NULL);
+    join_msg.send_time = 0;
     
     zmq_msg_t msg;
     zmq_msg_init_size(&msg, sizeof(message_t));
@@ -150,9 +151,10 @@ int main(int argc, char* argv[]) {
         memset(&new_msg, 0, sizeof(message_t));
         strcpy(new_msg.sender, login);
         new_msg.type = MSG_TYPE_TEXT;
-        new_msg.send_time = time(NULL);
-        new_msg.created_time = time(NULL);  // Время создания на клиенте
-        new_msg.send_time = time(NULL);     // По умолчанию отправка сейчас
+        new_msg.created_time = time(NULL);
+        new_msg.send_time = 0;
+
+        int show_local = 0; // Флаг: показывать ли сообщение локально
         
         if (strncmp(input, "@", 1) == 0) {
             // Личное сообщение
@@ -161,12 +163,19 @@ int main(int argc, char* argv[]) {
                 *space = 0;
                 strcpy(new_msg.recipient, input + 1); // Пропускаем @
                 strcpy(new_msg.text, space + 1);
+                
+                // Если отправляем себе, показываем локально
+                // if (strcmp(new_msg.recipient, login) == 0) {
+                //     show_local = 1;
+                // }
             } else {
-                clear_input_line();
-                printf("Неправильный формат. Используйте: @user сообщение\n");
-                printf("%s> ", login);
-                fflush(stdout);
-                continue;
+                // clear_input_line();
+                // printf("Неправильный формат. Используйте: @user сообщение\n");
+                // printf("%s> ", login);
+                // fflush(stdout);
+                // continue;
+                strcpy(new_msg.recipient, input + 1);
+                strcpy(new_msg.text, "");
             }
         } else if (strncmp(input, "ALL ", 4) == 0) {
             // Широковещательное сообщение
@@ -176,7 +185,7 @@ int main(int argc, char* argv[]) {
             // Отложенное сообщение - новая логика парсинга
             new_msg.type = MSG_TYPE_DELAYED;
             new_msg.created_time = time(NULL);
-            
+
             // Парсим: delay @user время текст
             char* args = input + 6;
             char* recipient_str = strtok(args, " ");
@@ -224,8 +233,9 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             
-            new_msg.send_time = new_msg.created_time + delay_seconds;
-            strcpy(new_msg.text, text);
+            char full_text[300];
+            snprintf(full_text, sizeof(full_text), "DELAY:%d:%s", delay_seconds, text);
+            strcpy(new_msg.text, full_text);
             
             clear_input_line();
             printf("Отложенное сообщение для %s будет отправлено через %d секунд\n", 
@@ -233,12 +243,23 @@ int main(int argc, char* argv[]) {
             printf("%s> ", login);
             fflush(stdout);
             
-            // Продолжаем - отправим сообщение
+            // if (strcmp(new_msg.recipient, login) == 0) {
+            //     show_local = 1;
+            // }
         } else {
             // По умолчанию - отправляем себе (для заметок)
             strcpy(new_msg.recipient, login);
             strcpy(new_msg.text, input);
+            // show_local = 1; // Всегда показываем себе свои заметки
         }
+
+        // if (show_local) {
+        //     clear_input_line();
+        //     print_time();
+        //     printf("%s: %s\n", login, new_msg.text);
+        //     printf("%s> ", login);
+        //     fflush(stdout);
+        // }
         
         // Отправляем сообщение
         zmq_msg_t zmq_msg;
@@ -256,7 +277,8 @@ int main(int argc, char* argv[]) {
     strcpy(leave_msg.recipient, "SERVER");
     strcpy(leave_msg.text, "покинул чат");
     leave_msg.type = MSG_TYPE_LEAVE;
-    leave_msg.send_time = time(NULL);
+    leave_msg.created_time = time(NULL);
+    leave_msg.send_time = 0;
     
     zmq_msg_init_size(&msg, sizeof(message_t));
     memcpy(zmq_msg_data(&msg), &leave_msg, sizeof(message_t));
