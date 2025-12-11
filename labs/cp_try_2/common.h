@@ -58,4 +58,18 @@ void print_time_with_label(time_t t, const char* label) {
     printf("%s: %02d:%02d:%02d", label, tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
+void print_message_info(message_t* msg, const char* action) {
+    time_t now = time(NULL);
+    printf("[");
+    print_time_struct(now);
+    printf("] %s: %s -> %s\n", action, msg->sender, msg->recipient);
+    printf("    Создано: ");
+    print_time_struct(msg->created_time);
+    if (msg->type == MSG_TYPE_DELAYED) {
+        printf(", отправка: ");
+        print_time_struct(msg->send_time);
+    }
+    printf("\n    Текст: %s\n", msg->text);
+}
+
 #endif

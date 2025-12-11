@@ -59,13 +59,16 @@ void* receive_messages(void* arg) {
         if (strcmp(msg.recipient, "ALL") == 0 || 
             strcmp(msg.recipient, login) == 0) {
             
-            // if (strcmp(msg.sender, login) != 0) {
             clear_input_line();
-            print_time();
-            safe_print("%s: %s\n", msg.sender, msg.text);
+            
+            // Показываем время получения и время создания
+            print_time();  // Текущее время получения
+            printf("(создано ");
+            print_time_struct(msg.created_time);  // Время создания
+            printf(") %s: %s\n", msg.sender, msg.text);
+            
             printf("%s> ", login);
             fflush(stdout);
-            // }
         }
     }
     

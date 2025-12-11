@@ -105,10 +105,13 @@ void* delayed_messages_thread(void* arg) {
         for (int i = 0; i < delayed_count; i++) {
             if (delayed_msgs[i].active && 
                 delayed_msgs[i].original_send_time <= now) {
+
+                time_t server_now = time(NULL);
                 
                 // Меняем тип на обычное сообщение
                 delayed_msgs[i].msg.type = MSG_TYPE_TEXT;
-                delayed_msgs[i].msg.send_time = now;
+                delayed_msgs[i].msg.send_time = delayed_msgs[i].original_send_time;// now;
+                
                 
                 // Отправляем через ОСНОВНОЙ publisher (порт 7779)
                 zmq_msg_t msg;
@@ -118,13 +121,13 @@ void* delayed_messages_thread(void* arg) {
                 zmq_msg_close(&msg);
             
                 printf("[");
-                print_time_struct(now);
+                print_time_struct(server_now);  // Время фактической отправки
                 printf("] Отправлено отложенное сообщение: %s -> %s\n",
                        delayed_msgs[i].msg.sender, 
                        delayed_msgs[i].msg.recipient);
                 printf("    Создано: ");
                 print_time_struct(delayed_msgs[i].msg.created_time);
-                printf(", должно было отправиться: ");
+                printf(", планировалось: ");
                 print_time_struct(delayed_msgs[i].original_send_time);
                 printf("\n    Текст: %s\n", delayed_msgs[i].msg.text);
                     
@@ -245,6 +248,7 @@ int main() {
                 break;
                 
             case MSG_TYPE_DELAYED: {
+                time_t now = time(NULL);
                 
                 // Парсим задержку из текста
                 if (strncmp(msg.text, "DELAY:", 6) == 0) {
@@ -257,8 +261,13 @@ int main() {
                 }
                 
                 printf("[");
-                print_time_struct(now);
+                print_time_struct(now);  // Текущее время сервера
                 printf("] Получено отложенное сообщение от %s\n", msg.sender);
+                printf("    Создано клиентом: ");
+                print_time_struct(msg.created_time);
+                printf(", будет отправлено: ");
+                print_time_struct(msg.send_time);
+                printf("\n");
                 
                 add_delayed_message(&msg);
                 break;
