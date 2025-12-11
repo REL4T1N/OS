@@ -23,17 +23,21 @@ int main() {
             break;
         }
         
-        // Удаление символа новой строки
+        // удалить \n
         command[strcspn(command, "\n")] = '\0';
         
-        if (strcmp(command, "3") == 0) {
+        if (strcmp(command, "3") == 0) {            // выход
             printf("Exiting...\n");
             break;
-        } else if (strcmp(command, "0") == 0) {
+        } else if (strcmp(command, "0") == 0) {     // тут нельзя переключаться, для аналогичности интерфейса сделана
             printf("Warning: Library switching is not supported in Program 1\n");
             printf("This program is hard-linked to lib1.so\n");
-        } else if (command[0] == '1') {
+        } else if (command[0] == '1') {             // интеграл
             float A, B, e;
+            /*
+            scanf() - чтение из стандартного ввода (stdin):
+            sscanf() - чтение из строки (буфера):
+            */
             if (sscanf(command + 1, "%f %f %f", &A, &B, &e) == 3) {
                 float result = sinIntegral(A, B, e);
                 printf("Result (Rectangles method): %.6f\n", result);
@@ -41,7 +45,7 @@ int main() {
                 printf("Error: Invalid arguments for command '1'\n");
                 printf("Usage: 1 A B e\n");
             }
-        } else if (command[0] == '2') {
+        } else if (command[0] == '2') {             // НОД
             int A, B;
             if (sscanf(command + 1, "%d %d", &A, &B) == 2) {
                 int result = GCF(A, B);
