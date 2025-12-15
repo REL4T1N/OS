@@ -27,15 +27,15 @@ int main(int argc, char **argv)
         { NULL,   STDIN_FILENO, ZMQ_POLLIN, 0 }
     };
 
-    char buffer[256];
+    char buffer[512];
 
     while (1) {
         zmq_poll(items, 2, -1);
 
         if (items[0].revents & ZMQ_POLLIN) {
-            int size = zmq_recv(dealer, buffer, 255, 0);
+            int size = zmq_recv(dealer, buffer, sizeof(buffer) - 1, 0);
             buffer[size] = '\0';
-            printf("Message: %s\n", buffer);
+            printf("%s\n", buffer);
         }
 
         if (items[1].revents & ZMQ_POLLIN) {
