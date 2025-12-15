@@ -1,153 +1,124 @@
+// simple_client.c
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <zmq.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <stdbool.h>
+#include <errno.h>
 
-volatile bool running = true;
+#define MAX_MSG_SIZE 256
 
-void *receive_messages(void *socket_ptr) {
-    void *socket = socket_ptr;
+// Структура для потока приема
+typedef struct {
+    char client_id[20];
+} thread_data_t;
+
+// Функция для приема сообщений
+void* receive_messages(void *arg) {
+    thread_data_t *data = (thread_data_t*)arg;
     
-    while (running) {
-        zmq_msg_t identity_msg;
-        zmq_msg_init(&identity_msg);
-        
-        if (zmq_msg_recv(&identity_msg, socket, 0) < 0) {
-            if (running) {
-                perror("Ошибка при получении идентификатора");
-            }
-            zmq_msg_close(&identity_msg);
-            usleep(100000); // 100ms
-            continue;
-        }
-        
-        zmq_msg_t empty_msg;
-        zmq_msg_init(&empty_msg);
-        zmq_msg_recv(&empty_msg, socket, 0);
-        zmq_msg_close(&empty_msg);
-        
-        zmq_msg_t message_msg;
-        zmq_msg_init(&message_msg);
-        
-        if (zmq_msg_recv(&message_msg, socket, 0) < 0) {
-            zmq_msg_close(&identity_msg);
-            zmq_msg_close(&message_msg);
-            continue;
-        }
-        
-        char *message = (char*)zmq_msg_data(&message_msg);
-        size_t message_len = zmq_msg_size(&message_msg);
-        
-        // Выводим сообщение
-        printf("\n>> %.*s\n", (int)message_len, message);
-        printf("Введите сообщение (@имя текст): ");
-        fflush(stdout);
-        
-        zmq_msg_close(&identity_msg);
-        zmq_msg_close(&message_msg);
+    void *context = zmq_ctx_new();
+    void *subscriber = zmq_socket(context, ZMQ_SUB);
+    
+    // Подключаемся к серверу для получения сообщений
+    if (zmq_connect(subscriber, "tcp://localhost:5555") != 0) {
+        printf("Ошибка подключения получателя: %s\n", zmq_strerror(errno));
+        return NULL;
     }
     
+    // Подписываемся на все сообщения
+    zmq_setsockopt(subscriber, ZMQ_SUBSCRIBE, "", 0);
+    
+    printf("Получатель для %s запущен\n", data->client_id);
+    
+    char buffer[MAX_MSG_SIZE];
+    while (1) {
+        memset(buffer, 0, sizeof(buffer));
+        int size = zmq_recv(subscriber, buffer, sizeof(buffer) - 1, 0);
+        
+        if (size > 0) {
+            buffer[size] = '\0';
+            
+            // Проверяем, не наше ли это сообщение
+            char search_str[50];
+            snprintf(search_str, sizeof(search_str), "[%s]:", data->client_id);
+            
+            if (strstr(buffer, search_str) == NULL) {
+                // Это не наше сообщение, показываем его
+                printf("\n>>> %s\n", buffer);
+                printf("%s > ", data->client_id);
+                fflush(stdout);
+            }
+        }
+        usleep(10000);
+    }
+    
+    zmq_close(subscriber);
+    zmq_ctx_destroy(context);
     return NULL;
 }
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        printf("Использование: %s <имя_клиента>\n", argv[0]);
+        printf("Использование: %s <client_id>\n", argv[0]);
+        printf("Пример: %s bob\n", argv[0]);
         return 1;
     }
     
-    char *client_name = argv[1];
-    printf("Клиент '%s' запущен\n", client_name);
-    printf("Подключение к серверу...\n");
-    
+    // Создаем контекст для отправителя
     void *context = zmq_ctx_new();
-    void *socket = zmq_socket(context, ZMQ_DEALER);
+    void *publisher = zmq_socket(context, ZMQ_PUB);
     
-    // Подключаемся к серверу
-    if (zmq_connect(socket, "tcp://localhost:5555") != 0) {
-        perror("Ошибка подключения к серверу");
-        zmq_close(socket);
-        zmq_ctx_destroy(context);
+    // Подключаемся к серверу для отправки сообщений
+    if (zmq_connect(publisher, "tcp://localhost:5556") != 0) {
+        printf("Ошибка подключения отправителя: %s\n", zmq_strerror(errno));
         return 1;
     }
     
-    printf("Подключено к серверу\n");
+    // Даем время на установление соединения (важно для PUB)
+    printf("Подключение...\n");
+    sleep(1);
     
-    // Отправляем имя для регистрации
-    zmq_msg_t reg_msg;
-    zmq_msg_init_size(&reg_msg, strlen(client_name));
-    memcpy(zmq_msg_data(&reg_msg), client_name, strlen(client_name));
-    
-    if (zmq_msg_send(&reg_msg, socket, 0) < 0) {
-        perror("Ошибка при регистрации");
-        zmq_msg_close(&reg_msg);
-        zmq_close(socket);
-        zmq_ctx_destroy(context);
-        return 1;
-    }
-    
-    zmq_msg_close(&reg_msg);
-    printf("Зарегистрирован на сервере как '%s'\n", client_name);
-    printf("Для отправки сообщения используйте формат: @имя текст\n");
-    printf("Пример: @bob привет!\n");
-    printf("Для выхода нажмите Ctrl+C\n\n");
-    
-    // Запускаем поток для приема сообщений
+    // Создаем поток для приема сообщений
     pthread_t thread;
-    if (pthread_create(&thread, NULL, receive_messages, socket) != 0) {
-        perror("Ошибка создания потока");
-        zmq_close(socket);
-        zmq_ctx_destroy(context);
+    thread_data_t thread_data;
+    strncpy(thread_data.client_id, argv[1], sizeof(thread_data.client_id) - 1);
+    
+    if (pthread_create(&thread, NULL, receive_messages, &thread_data) != 0) {
+        printf("Ошибка создания потока\n");
         return 1;
     }
     
-    // Основной цикл для отправки сообщений
-    char input[256];
-    while (running) {
-        printf("Введите сообщение (@имя текст): ");
+    printf("Клиент %s запущен. Вводите сообщения (Ctrl+C для выхода):\n", argv[1]);
+    
+    char message[MAX_MSG_SIZE];
+    while (1) {
+        printf("%s > ", argv[1]);
         fflush(stdout);
         
-        if (fgets(input, sizeof(input), stdin)) {
-            // Проверяем выход
-            if (strcmp(input, "exit\n") == 0 || strcmp(input, "quit\n") == 0) {
-                running = false;
-                break;
-            }
-            
+        if (fgets(message, sizeof(message), stdin) != NULL) {
             // Убираем символ новой строки
-            input[strcspn(input, "\n")] = 0;
+            message[strcspn(message, "\n")] = 0;
             
-            if (strlen(input) > 0) {
-                zmq_msg_t msg;
-                zmq_msg_init_size(&msg, strlen(input));
-                memcpy(zmq_msg_data(&msg), input, strlen(input));
+            if (strlen(message) > 0) {
+                // Формируем полное сообщение с идентификатором
+                char full_message[MAX_MSG_SIZE + 50];
+                snprintf(full_message, sizeof(full_message), "[%s]: %s", argv[1], message);
                 
-                if (zmq_msg_send(&msg, socket, 0) < 0) {
-                    perror("Ошибка отправки сообщения");
+                printf("Отправляю: %s\n", full_message);
+                
+                // Отправляем сообщение
+                if (zmq_send(publisher, full_message, strlen(full_message), 0) == -1) {
+                    printf("Ошибка отправки: %s\n", zmq_strerror(errno));
                 } else {
-                    printf("Сообщение отправлено: %s\n", input);
+                    printf("Сообщение отправлено\n");
                 }
-                
-                zmq_msg_close(&msg);
             }
         }
     }
     
-    printf("Завершение работы...\n");
-    running = false;
-    
-    // Даем потоку время завершиться
-    usleep(100000);
-    
-    pthread_cancel(thread);
-    pthread_join(thread, NULL);
-    
-    zmq_close(socket);
+    zmq_close(publisher);
     zmq_ctx_destroy(context);
-    
-    printf("Клиент завершил работу\n");
     return 0;
 }
