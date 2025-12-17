@@ -1,0 +1,253 @@
+#include <zmq.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+#define MAX_USERS 32
+#define MAX_DELAYED 128
+
+typedef struct {
+    char name[256];
+    int online;
+    char zmq_id[256];
+    size_t zmq_id_size;
+} user_t;
+
+typedef struct {
+    time_t deliver_at;
+    char sender[256];
+    char receiver[256];
+    char payload[256];
+} delayed_msg_t;
+
+void current_time(char *buf, size_t size) {
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+
+    snprintf(buf, size,
+             "[%02d:%02d:%02d]",
+             tm->tm_hour,
+             tm->tm_min,
+             tm->tm_sec);
+}
+
+void format_time(time_t t, char *buf, size_t size) {
+    struct tm *tm = localtime(&t);
+    snprintf(buf, size,
+             "%02d:%02d:%02d",
+             tm->tm_hour,
+             tm->tm_min,
+             tm->tm_sec);
+}
+
+int find_user(user_t *users, int count, const char *name) {
+    for (int i = 0; i < count; i++) {
+        if (strcmp(users[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int main() {
+    void *ctx = zmq_ctx_new();
+    void *router = zmq_socket(ctx, ZMQ_ROUTER);
+
+    zmq_bind(router, "tcp://*:5555");
+
+    user_t users[MAX_USERS];
+    delayed_msg_t delayed[MAX_DELAYED];
+    int user_count = 0, delayed_count = 0;
+
+    while (1) {
+        zmq_pollitem_t items[] = {
+            {router, 0, ZMQ_POLLIN, 0}
+        };
+        zmq_poll(items, 1, 100);    // чекая очередь каждые 100мс
+
+        if (items[0].revents & ZMQ_POLLIN) {
+            zmq_msg_t id;
+            zmq_msg_t msg;
+
+            zmq_msg_init(&id);
+            zmq_msg_init(&msg);
+
+            zmq_msg_recv(&id, router, 0);
+            zmq_msg_recv(&msg, router, 0);
+
+            char sender[256];
+            char text[256];
+            memcpy(sender, zmq_msg_data(&id), zmq_msg_size(&id));
+            memcpy(text, zmq_msg_data(&msg), zmq_msg_size(&msg));
+            sender[zmq_msg_size(&id)] = '\0';
+            text[zmq_msg_size(&msg)] = '\0';
+
+            char ts[16];
+
+            if (strcmp(text, "JOIN") == 0) {
+                int idx = find_user(users, user_count, sender);
+                current_time(ts, sizeof(ts));
+
+                if (idx >= 0 && users[idx].online) {    // пользователь с таким именем уже онлайн
+                    zmq_msg_close(&id);
+                    zmq_msg_close(&msg);
+                    continue;
+                }
+
+                if (idx < 0) {
+                    idx = user_count++;
+                    strcpy(users[idx].name, sender);
+                }
+                
+                users[idx].online = 1;
+                memcpy(users[idx].zmq_id, zmq_msg_data(&id), zmq_msg_size(&id));
+                users[idx].zmq_id_size = zmq_msg_size(&id);
+                // client_count++;
+
+                printf("%s client joined: %s\n", ts, sender);
+            } else if (strcmp(text, "/exit") == 0) {
+                int idx =  find_user(users, user_count, sender);
+                if (idx >= 0) {
+                    users[idx].online = 0;
+                }
+                printf("%s client disconnected: %s\n", ts, sender);
+            } else if (text[0] == '/') {
+                char *space1 = strchr(text, ' ');
+                if (!space1) {
+                    zmq_msg_close(&id);
+                    zmq_msg_close(&msg);
+                    continue;
+                }
+
+                *space1 = '\0';
+                char *cmd = text;
+                char *rest = space1 + 1;
+
+                char *space2 = strchr(rest, ' ');
+                if (!space2) {
+                    zmq_msg_close(&id);
+                    zmq_msg_close(&msg); 
+                    continue;
+                }
+
+                *space2 = '\0';
+
+                if (rest[0] != '@') {
+                    zmq_msg_close(&id);
+                    zmq_msg_close(&msg);
+                    continue;
+                }
+
+                char *target = rest + 1;
+                char *payload = space2 + 1;
+
+                if (payload[0] == '\0' || target[0] == '\0') {
+                    zmq_msg_close(&id);
+                    zmq_msg_close(&msg);
+                    continue;
+                }
+
+                if (strcmp(target, "all") == 0) {
+                    if (strcmp(cmd, "/m") != 0) {
+                        zmq_msg_close(&id);
+                        zmq_msg_close(&msg);
+                        continue;
+                    }
+                }
+
+                current_time(ts, sizeof(ts));
+
+                if (strcmp(cmd, "/m") == 0) {
+                    printf("1. Target: %s, Sender: %s\n", target, sender);
+                    if (strcmp(target, "all") == 0) {
+                        printf("%s %s -> all: %s\n", ts, sender, payload);
+                        char out_other[512];
+                        char out_me[512];
+
+                        snprintf(out_other, sizeof(out_other), "%s %s -> all: %s", ts, sender, payload);
+                        snprintf(out_me, sizeof(out_me), "%s Me: %s", ts, payload);
+                        for (int i = 0; i < user_count; i++) {
+                            if (!users[i].online) {
+                                continue;
+                            }
+
+                            zmq_send(router, users[i].zmq_id, users[i].zmq_id_size, ZMQ_SNDMORE);
+                            if (strcmp(users[i].name, sender) == 0) {
+                                zmq_send(router, out_me, strlen(out_me), 0);
+                            } else {
+                                zmq_send(router, out_other, strlen(out_other), 0);
+                            }
+                        }
+                    } else {
+                        printf("%s %s -> %s: %s\n", ts, sender, target, payload);
+
+                        int r_idx = find_user(users, user_count, target);
+                        // int s_idx = find_user(users, user_count, sender);
+                        printf("2. Target: %s, Sender: %s\n", target, sender);
+                        if (r_idx > 0 && users[r_idx].online) {
+                            char out[512];
+                            printf("3. Target: %s, Sender: %s\n", target, sender);
+                            if (strcmp(target, sender) == 0) {
+                                snprintf(out, sizeof(out), "%s Me: %s", ts, payload);
+                            } else {
+                                snprintf(out, sizeof(out), "%s %s -> %s: %s", ts, sender, target, payload);
+                            }
+
+                            zmq_send(router, users[r_idx].zmq_id, users[r_idx].zmq_id_size, ZMQ_SNDMORE);
+                            zmq_send(router, out, strlen(out), 0);
+                        }
+                    }
+                } else if (strncmp(cmd, "/dm_", 4) == 0) {
+                    int delay = atoi(cmd + 4);
+                    if (delay <= 0 || delayed_count >= MAX_DELAYED) {
+                        zmq_msg_close(&id);
+                        zmq_msg_close(&msg);
+                        continue;
+                    }
+
+                    time_t now = time(NULL);
+                    time_t deliver_at = now + delay;
+                    char eta[16];
+                    format_time(deliver_at, eta, sizeof(eta));
+
+                    printf("%s (DELAYED) %s -> %s: %s (ETA %s)\n", ts, sender, target, payload, eta);
+
+                    delayed_msg_t *d = &delayed[delayed_count++];
+                    d->deliver_at = deliver_at;
+                    strcpy(d->sender, sender);
+                    strcpy(d->receiver, target);
+                    strcpy(d->payload, payload);
+                }
+            }
+            zmq_msg_close(&id);
+            zmq_msg_close(&msg);
+            continue;
+        }
+
+        time_t now = time(NULL);
+        for (int i = 0; i < delayed_count; ) {
+            if (delayed[i].deliver_at <= now) {
+                char ts[16];
+                current_time(ts, sizeof(ts));
+
+                int r_idx = find_user(users, user_count, delayed[i].receiver);
+                
+                if (r_idx >= 0 && users[r_idx].online) {
+                    printf("%s (DELAYED DELIVERED) %s -> %s: %s\n", ts, delayed[i].sender, delayed[i].receiver, delayed[i].payload);
+                    char out[512];
+
+                    snprintf(out, sizeof(out), "%s (delayed) %s -> %s: %s", ts, delayed[i].sender, delayed[i].receiver, delayed[i].payload);
+                    zmq_send(router, users[r_idx].zmq_id, users[r_idx].zmq_id_size, ZMQ_SNDMORE);
+                    zmq_send(router, out, strlen(out), 0);                
+                } else {
+                    printf("%s (DELAYED DROPPED) %s -> %s: %s (receiver offline)\n", ts, delayed[i].sender, delayed[i].receiver, delayed[i].payload);
+                }
+                delayed[i] = delayed[--delayed_count];
+            } else {
+                i++;
+            }
+        }
+    }
+    zmq_close(router);
+    zmq_ctx_destroy(ctx);
+}
