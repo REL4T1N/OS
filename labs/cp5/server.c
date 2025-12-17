@@ -14,7 +14,8 @@ typedef struct {
 } user_t;
 
 typedef struct {
-    time_t deliver_at;
+    // time_t deliver_at;
+    struct timespec deliver_at;
     char sender[256];
     char receiver[256];
     char payload[256];
@@ -38,6 +39,12 @@ void format_time(time_t t, char *buf, size_t size) {
              tm->tm_hour,
              tm->tm_min,
              tm->tm_sec);
+}
+
+timespec_ge(const struct timespec *a, const struct timespec *b) {
+    return (a->tv_sec > b->tv_sec) ||
+           (a->tv_sec == b->tv_sec &&
+            a->tv_nsec >= b->tv_nsec);
 }
 
 int find_user(user_t *users, int count, const char *name) {
@@ -158,7 +165,7 @@ int main() {
                 current_time(ts, sizeof(ts));
 
                 if (strcmp(cmd, "/m") == 0) {
-                    printf("1. Target: %s, Sender: %s\n", target, sender);
+                    // printf("1. Target: %s, Sender: %s\n", target, sender);
                     if (strcmp(target, "all") == 0) {
                         printf("%s %s -> all: %s\n", ts, sender, payload);
                         char out_other[512];
@@ -183,10 +190,10 @@ int main() {
 
                         int r_idx = find_user(users, user_count, target);
                         // int s_idx = find_user(users, user_count, sender);
-                        printf("2. Target: %s, Sender: %s\n", target, sender);
-                        if (r_idx > 0 && users[r_idx].online) {
+                        // printf("2. Target: %s, Sender: %s\n", target, sender);
+                        if (r_idx >= 0 && users[r_idx].online) {
                             char out[512];
-                            printf("3. Target: %s, Sender: %s\n", target, sender);
+                            // printf("3. Target: %s, Sender: %s\n", target, sender);
                             if (strcmp(target, sender) == 0) {
                                 snprintf(out, sizeof(out), "%s Me: %s", ts, payload);
                             } else {
@@ -205,10 +212,17 @@ int main() {
                         continue;
                     }
 
-                    time_t now = time(NULL);
-                    time_t deliver_at = now + delay;
+                    struct timespec now_mono;
+                    clock_gettime(CLOCK_MONOTONIC, &now_mono);
+
+                    struct timespec deliver_at;
+                    deliver_at.tv_sec  = now_mono.tv_sec + delay;
+                    deliver_at.tv_nsec = now_mono.tv_nsec;
+
+                    /* ETA — ТОЛЬКО для логов */
+                    time_t eta_wall = time(NULL) + delay;
                     char eta[16];
-                    format_time(deliver_at, eta, sizeof(eta));
+                    format_time(eta_wall, eta, sizeof(eta));
 
                     printf("%s (DELAYED) %s -> %s: %s (ETA %s)\n", ts, sender, target, payload, eta);
 
@@ -224,9 +238,10 @@ int main() {
             continue;
         }
 
-        time_t now = time(NULL);
+        struct timespec now_mono;
+        clock_gettime(CLOCK_MONOTONIC, &now_mono);
         for (int i = 0; i < delayed_count; ) {
-            if (delayed[i].deliver_at <= now) {
+            if (timespec_ge(&now_mono, &delayed[i].deliver_at)) {
                 char ts[16];
                 current_time(ts, sizeof(ts));
 
