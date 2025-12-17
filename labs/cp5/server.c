@@ -14,7 +14,6 @@ typedef struct {
 } user_t;
 
 typedef struct {
-    // time_t deliver_at;
     struct timespec deliver_at;
     char sender[256];
     char receiver[256];
@@ -70,7 +69,7 @@ int main() {
         zmq_pollitem_t items[] = {
             {router, 0, ZMQ_POLLIN, 0}
         };
-        zmq_poll(items, 1, 100);    // чекая очередь каждые 100мс
+        zmq_poll(items, 1, 100);
 
         if (items[0].revents & ZMQ_POLLIN) {
             zmq_msg_t id;
@@ -95,7 +94,7 @@ int main() {
                 int idx = find_user(users, user_count, sender);
                 current_time(ts, sizeof(ts));
 
-                if (idx >= 0 && users[idx].online) {    // пользователь с таким именем уже онлайн
+                if (idx >= 0 && users[idx].online) {
                     zmq_msg_close(&id);
                     zmq_msg_close(&msg);
                     continue;
@@ -109,7 +108,6 @@ int main() {
                 users[idx].online = 1;
                 memcpy(users[idx].zmq_id, zmq_msg_data(&id), zmq_msg_size(&id));
                 users[idx].zmq_id_size = zmq_msg_size(&id);
-                // client_count++;
 
                 printf("%s client joined: %s\n", ts, sender);
             } else if (strcmp(text, "/exit") == 0) {
@@ -165,7 +163,6 @@ int main() {
                 current_time(ts, sizeof(ts));
 
                 if (strcmp(cmd, "/m") == 0) {
-                    // printf("1. Target: %s, Sender: %s\n", target, sender);
                     if (strcmp(target, "all") == 0) {
                         printf("%s %s -> all: %s\n", ts, sender, payload);
                         char out_other[512];
@@ -189,11 +186,8 @@ int main() {
                         printf("%s %s -> %s: %s\n", ts, sender, target, payload);
 
                         int r_idx = find_user(users, user_count, target);
-                        // int s_idx = find_user(users, user_count, sender);
-                        // printf("2. Target: %s, Sender: %s\n", target, sender);
                         if (r_idx >= 0 && users[r_idx].online) {
                             char out[512];
-                            // printf("3. Target: %s, Sender: %s\n", target, sender);
                             if (strcmp(target, sender) == 0) {
                                 snprintf(out, sizeof(out), "%s Me: %s", ts, payload);
                             } else {
