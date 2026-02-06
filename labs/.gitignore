@@ -8,7 +8,7 @@ parent
 child
 child.exe
 gcc
-strace*
+
 *.exe
 venv
 old_version
@@ -16,6 +16,7 @@ results
 parallel_sort
 commit*
 *obsidian
-
+*.zip
 client
 server
+*.jpeg
